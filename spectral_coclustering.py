@@ -8,6 +8,7 @@ from scipy.spatial.distance import pdist, squareform
 #fast version
 from scikits.learn.utils.extmath import fast_svd
 from scikits.learn.cluster import k_means, affinity_propagation
+import pylab as pl
 
 def ap(z):
     sim_matrix = -squareform(pdist(z, 'euclidean'))
@@ -19,8 +20,30 @@ def ap(z):
 
 def show_cluster(A, name):
     print A
-    #pl.matshow(A, aspect='auto', origin = 'lower', cmap=pl.cm.YlGnBu)
-    #pl.savefig(name)
+    cdict = {'red': ((0.0, 1.0, 1.0),
+                     (1.0, 0.5, 0.5)),
+             'green': ((0.0, 1.0, 1.0),
+                       (1.0, 0.5, 0.5)),
+             'blue': ((0.0, 1.0, 1.0),
+                      (1.0, 0.5, 0.5))}
+
+    my_cmap = pl.matplotlib.colors.LinearSegmentedColormap('my_colormap',cdict,256)
+    fig = pl.figure()
+    ax = fig.add_axes([0.2, 0.2, 0.7, 0.7])
+    ax.matshow(A, aspect='auto', origin = 'lower', cmap=my_cmap)
+    n_row, n_col = A.shape
+    for y in np.arange(n_row) + 0.5:
+        ax.axhline(y,color="black")
+
+    for y in np.arange(n_col) + 0.5:
+        ax.axvline(y,color="black")
+
+    #ax.set_xticks(np.arange(n_col))
+    #ax.set_yticks(np.arange(n_row))
+    labels = ax.set_yticklabels(["product"] * n_col)
+    labels = ax.set_xticklabels(["features"] * n_row, rotation=30)
+
+    fig.savefig(name)
 
 def spectral_coclustering(A, use_k_means=False, k=3):
 
@@ -61,7 +84,7 @@ def reorder_axis(labels):
     new_idx = []
     
     for i in uniq_labels:
-        i_idx = np.where(np.array(labels) == i)
+        i_idx = np.where(labels == i)
         new_idx.extend(i_idx[0].tolist())
 
     return new_idx
@@ -71,22 +94,53 @@ def reorder_matrix(mat, r_labels, c_labels):
     Given a dense cluster, sort the points inside the cluster 
     so that they are less tangled and look nice.
     """
-    show_cluster(mat, "before.png")
+    show_cluster(mat, "before.pdf")
 
     new_r_idx = reorder_axis(r_labels)
     new_c_idx = reorder_axis(c_labels)
-
-    print new_r_idx
-    print new_c_idx
 
     new_r_idx = np.array(new_r_idx)[:, np.newaxis]
 
     new_mat = mat[new_r_idx, new_c_idx]
 
-    show_cluster(new_mat, "after.png")
+    # adjust the order between clusters
+    new_mat = adjust_col(new_mat, r_labels, c_labels, new_r_idx, new_c_idx)
     
+    show_cluster(new_mat, "after.pdf")
+
+    return new_mat, new_r_idx, new_c_idx
+
+def adjust_col(new_mat, r_labels, c_labels, new_r_idx, new_c_idx):
+    uniq_r_labels = np.unique(r_labels)
+
+    c_li = [0]
+
+    n_row, n_col = new_mat.shape
+
+    left = range(n_col)
+    left.remove(c_li[-1])
+    while len(c_li) != n_col:
+        last = c_li[-1]
+        #print c_li, left
+        argmax = left[0]
+        max_sim = sim(new_mat, last, argmax)
+        for j in left:
+            new_simi = sim(new_mat, last, j)
+            if new_simi > max_sim:
+                argmax = j
+                max_sim = new_simi
+        c_li.append(argmax)
+        left.remove(argmax)
+
+    return new_mat[:, c_li]
+
+def sim(mat, i, j):
+    """
+    compute the similarity between column i and j
+    """
+    return (np.sum(mat[:, i] == mat[:, j]))
 
 if __name__ == "__main__":
     A = np.loadtxt('town.csv', delimiter=",")
     r_labels, c_labels = spectral_coclustering(A)
-    reorder_matrix(A, r_labels, c_labels)
+    new_A, new_r_idx, new_c_idx = reorder_matrix(A, r_labels, c_labels)
